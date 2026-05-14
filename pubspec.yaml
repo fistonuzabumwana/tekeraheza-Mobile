@@ -1,0 +1,50 @@
+name: tekeraheza_mobile
+description: A new Flutter project for Tekeraheza LPG Gas Distribution (Delivery & Customer Portal).
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Icons & UI
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.1.0
+  flutter_svg: ^2.0.9
+  font_awesome_flutter: ^10.6.0
+  
+  # API & Networking
+  http: ^1.1.0
+  dio: ^5.4.0
+  connectivity_plus: ^5.0.2
+
+  # State Management & DI
+  provider: ^6.1.1
+  get_it: ^7.6.4
+
+  # Utils
+  shared_preferences: ^2.2.2
+  intl: ^0.18.1
+  logger: ^2.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+
+  # To add assets to your application, add an assets section, like this:
+  # assets:
+  #   - assets/images/
+  #   - assets/icons/
+
+  # fonts:
+  #   - family: Outfit
+  #     fonts:
+  #       - asset: assets/fonts/Outfit-Regular.ttf
+  #       - asset: assets/fonts/Outfit-Bold.ttf
+  #         weight: 700
