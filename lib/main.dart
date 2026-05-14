@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'features/customer/presentation/screens/customer_home.dart';
 import 'features/delivery/presentation/screens/delivery_home.dart';
@@ -118,7 +117,8 @@ class RoleSelectionScreen extends StatelessWidget {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: Icon(icon, color: Theme.of(context).colorScheme.primary, size: 30),
+                child: Icon(icon,
+                    color: Theme.of(context).colorScheme.primary, size: 30),
               ),
               const SizedBox(width: 20),
               Expanded(
@@ -143,7 +143,8 @@ class RoleSelectionScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
+              const Icon(Icons.arrow_forward_ios,
+                  color: Colors.white, size: 16),
             ],
           ),
         ),
