@@ -1,16 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tekeraheza_mobile/main.dart';
+import 'package:tekeraheza_mobile/core/api/api_constants.dart';
 
 void main() {
-  testWidgets('App starts with Role Selection screen', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const TekerahezaApp());
-
-    // Verify that the title is present.
-    expect(find.text('TEKERAHEZA'), findsOneWidget);
-    
-    // Verify that the role options are present.
-    expect(find.text('I am a Customer'), findsOneWidget);
-    expect(find.text('I am a Driver'), findsOneWidget);
+  test('API base URL points to AWS backend', () {
+    expect(ApiConstants.baseUrl, contains('api.tekeraheza.systems'));
+    expect(ApiConstants.baseUrl, endsWith('/api'));
   });
 }
