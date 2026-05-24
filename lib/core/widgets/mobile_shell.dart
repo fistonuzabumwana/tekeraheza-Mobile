@@ -82,8 +82,9 @@ class _AppDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.read<AuthProvider>();
     final picture = user.profileImageUrl as String?;
-    final imageUrl =
-        picture != null && picture.isNotEmpty ? ApiClient.imageUrl(picture) : null;
+    final imageUrl = picture != null && picture.isNotEmpty
+        ? ApiClient.imageUrl(picture)
+        : null;
 
     return Drawer(
       child: Container(
@@ -146,10 +147,9 @@ class _AppDrawer extends StatelessWidget {
                     CircleAvatar(
                       radius: 22,
                       backgroundColor: Colors.white,
-                      backgroundImage:
-                          imageUrl != null && imageUrl.isNotEmpty
-                              ? NetworkImage(imageUrl)
-                              : null,
+                      backgroundImage: imageUrl != null && imageUrl.isNotEmpty
+                          ? NetworkImage(imageUrl)
+                          : null,
                       child: imageUrl == null || imageUrl.isEmpty
                           ? Text(
                               '${user.firstName.toString().substring(0, 1)}${user.lastName.toString().substring(0, 1)}',

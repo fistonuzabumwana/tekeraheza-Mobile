@@ -198,7 +198,8 @@ class _QuickActionCard extends StatelessWidget {
         leading: CircleAvatar(
           child: Icon(icon),
         ),
-        title: Text(title, style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+        title:
+            Text(title, style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
         subtitle: Text(subtitle),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
@@ -232,7 +233,8 @@ class _MiniAction extends StatelessWidget {
               children: [
                 Icon(icon, size: 32, color: AppColors.primary),
                 const SizedBox(height: 8),
-                Text(label, style: GoogleFonts.outfit(fontWeight: FontWeight.w500)),
+                Text(label,
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.w500)),
               ],
             ),
           ),
@@ -276,7 +278,8 @@ class _DriverSectionState extends State<_DriverSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Active Deliveries',
-            style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600)),
+            style:
+                GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
         if (_deliveries.isEmpty)
           const Text('No active deliveries')
