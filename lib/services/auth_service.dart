@@ -157,4 +157,12 @@ class AuthService {
     if (data == null) return null;
     return AppUser.fromJson(data);
   }
+
+  Future<Map<String, dynamic>> verifyManager(String email, String password) async {
+    return _api.post<Map<String, dynamic>>(
+      ApiConstants.verifyManager,
+      data: {'email': email, 'password': password},
+      fromJson: (json) => json as Map<String, dynamic>,
+    );
+  }
 }

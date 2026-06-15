@@ -122,6 +122,13 @@ class InventoryService {
         fromJson: (json) => json as Map<String, dynamic>,
       );
 
+  /// Unified lookup: full THZ QR payload, raw serial, or legacy barcode.
+  Future<Map<String, dynamic>> lookupCylinder(String code) => _api.post(
+        '/cylinders/lookup',
+        data: {'code': code},
+        fromJson: (json) => json as Map<String, dynamic>,
+      );
+
   Future<List<Map<String, dynamic>>> getCylindersNeedingInspection() =>
       _api.get(
         '/cylinders/needs-inspection',

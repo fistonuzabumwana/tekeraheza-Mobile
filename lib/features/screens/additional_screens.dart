@@ -26,6 +26,8 @@ import '../../services/custom_report_service.dart';
 import '../../services/customer_service.dart';
 import '../../services/delivery_service.dart';
 import '../../services/inventory_service.dart';
+import '../../services/order_service.dart';
+import '../../core/widgets/cylinder_scan_sheet.dart';
 import '../../services/payment_service.dart';
 import '../../services/permission_service.dart';
 import '../../services/receipt_service.dart';
@@ -838,15 +840,175 @@ class _ProofOfDeliveryScreenState extends State<ProofOfDeliveryScreen> {
   final _recipient = TextEditingController();
   final _phone = TextEditingController();
   final _notes = TextEditingController();
+  final Map<String, TextEditingController> _returnedSerialControllers = {};
+  final Map<String, TextEditingController> _deliveredSerialControllers = {};
   String? _imageBase64;
   bool _loading = false;
+  bool _dataLoading = true;
+  List<Map<String, dynamic>> _refillSlots = [];
+  List<Map<String, dynamic>> _outboundSlots = [];
+
+  String _slotKey(String itemId, int slotIndex) => '$itemId:$slotIndex';
+
+  List<Map<String, dynamic>> _expandItemSlots(List<Map<String, dynamic>> items) {
+    final slots = <Map<String, dynamic>>[];
+    for (final item in items) {
+      final itemId = item['id']?.toString() ?? '';
+      final qty = (item['quantity'] as num?)?.toInt() ?? 1;
+      final cylinderSlots = item['cylinderSlots'] as List<dynamic>? ?? [];
+      for (var i = 0; i < qty; i++) {
+        Map<String, dynamic>? slotData;
+        for (final s in cylinderSlots) {
+          final map = s as Map<String, dynamic>;
+          if ((map['slotIndex'] as num?)?.toInt() == i) {
+            slotData = map;
+            break;
+          }
+        }
+        var picked = slotData?['cylinderSerial']?.toString();
+        if (picked == null && i == 0) {
+          picked = item['cylinderSerial']?.toString();
+        }
+        final serials = item['cylinderSerials'] as List<dynamic>?;
+        if (picked == null && serials != null && i < serials.length) {
+          picked = serials[i]?.toString();
+        }
+        slots.add({
+          'item': item,
+          'key': _slotKey(itemId, i),
+          'slotIndex': i,
+          'qty': qty,
+          'name': item['productName']?.toString() ??
+              item['product']?['name']?.toString() ??
+              'Product',
+          'pickedSerial': picked,
+        });
+      }
+    }
+    return slots;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDeliveryAndOrder();
+  }
 
   @override
   void dispose() {
     _recipient.dispose();
     _phone.dispose();
     _notes.dispose();
+    for (final c in _returnedSerialControllers.values) {
+      c.dispose();
+    }
+    for (final c in _deliveredSerialControllers.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  Future<void> _loadDeliveryAndOrder() async {
+    try {
+      final delivery =
+          await sl<DeliveryService>().getById(widget.deliveryId);
+      final orderId = delivery['orderId']?.toString();
+      if (orderId != null && orderId.isNotEmpty) {
+        final order = await sl<OrderService>().getById(orderId);
+        final allItems = (order['items'] as List<dynamic>? ?? [])
+            .map((e) => e as Map<String, dynamic>)
+            .toList();
+        final refillItems = allItems
+            .where((item) =>
+                (item['itemType']?.toString().toUpperCase() ?? '') == 'REFILL')
+            .toList();
+        final outboundItems = allItems.where((item) {
+          final type = item['itemType']?.toString().toUpperCase() ?? '';
+          return type.isEmpty ||
+              type == 'REFILL' ||
+              type == 'NEW_CYLINDER' ||
+              type == 'EXCHANGE';
+        }).toList();
+        final refillSlots = _expandItemSlots(refillItems);
+        final outboundSlots = _expandItemSlots(outboundItems);
+        for (final slot in refillSlots) {
+          final key = slot['key']?.toString() ?? '';
+          if (key.isNotEmpty) {
+            _returnedSerialControllers[key] = TextEditingController();
+          }
+        }
+        for (final slot in outboundSlots) {
+          final key = slot['key']?.toString() ?? '';
+          if (key.isNotEmpty) {
+            final picked = slot['pickedSerial']?.toString() ?? '';
+            _deliveredSerialControllers[key] =
+                TextEditingController(text: picked);
+          }
+        }
+        setState(() {
+          _refillSlots = refillSlots;
+          _outboundSlots = outboundSlots;
+          _recipient.text = delivery['customerName']?.toString() ?? '';
+          _phone.text = delivery['customerPhone']?.toString() ?? '';
+        });
+      } else {
+        setState(() {
+          _recipient.text = delivery['customerName']?.toString() ?? '';
+          _phone.text = delivery['customerPhone']?.toString() ?? '';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _dataLoading = false);
+    }
+  }
+
+  Future<void> _scanDeliveredCylinder(String slotKey) async {
+    final code = await showCylinderScanSheet(context);
+    if (code == null || code.isEmpty) return;
+    try {
+      final response = await sl<InventoryService>().lookupCylinder(code);
+      final cylinder = response['cylinder'] as Map<String, dynamic>?;
+      final serial = cylinder?['serialNumber']?.toString();
+      if (serial == null) return;
+      _deliveredSerialControllers[slotKey]?.text = serial;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delivered cylinder $serial')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
+  }
+
+  Future<void> _scanReturnedCylinder(String slotKey) async {
+    final code = await showCylinderScanSheet(context);
+    if (code == null || code.isEmpty) return;
+    try {
+      final response = await sl<InventoryService>().lookupCylinder(code);
+      final cylinder = response['cylinder'] as Map<String, dynamic>?;
+      final serial = cylinder?['serialNumber']?.toString();
+      if (serial == null) return;
+      _returnedSerialControllers[slotKey]?.text = serial;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Cylinder $serial linked')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    }
   }
 
   Future<void> _pickImage() async {
@@ -858,15 +1020,37 @@ class _ProofOfDeliveryScreenState extends State<ProofOfDeliveryScreen> {
     }
   }
 
+  Map<String, String> _buildReturnedSerials() {
+    final map = <String, String>{};
+    for (final entry in _returnedSerialControllers.entries) {
+      final value = entry.value.text.trim();
+      if (value.isNotEmpty) map[entry.key] = value;
+    }
+    return map;
+  }
+
+  Map<String, String> _buildDeliveredSerials() {
+    final map = <String, String>{};
+    for (final entry in _deliveredSerialControllers.entries) {
+      final value = entry.value.text.trim();
+      if (value.isNotEmpty) map[entry.key] = value;
+    }
+    return map;
+  }
+
   Future<void> _complete() async {
     setState(() => _loading = true);
     try {
+      final returnedSerials = _buildReturnedSerials();
+      final deliveredSerials = _buildDeliveredSerials();
       await sl<DeliveryService>().updateStatus(widget.deliveryId, {
         'status': 'DELIVERED',
         'recipientName': _recipient.text.trim(),
         'recipientPhone': _phone.text.trim(),
         'driverNotes': _notes.text.trim(),
         if (_imageBase64 != null) 'proofOfDeliveryImage': _imageBase64,
+        if (returnedSerials.isNotEmpty) 'returnedSerials': returnedSerials,
+        if (deliveredSerials.isNotEmpty) 'deliveredSerials': deliveredSerials,
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -886,6 +1070,14 @@ class _ProofOfDeliveryScreenState extends State<ProofOfDeliveryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_dataLoading) {
+      return const MobileShell(
+        title: 'Proof of Delivery',
+        showBack: true,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return MobileShell(
       title: 'Proof of Delivery',
       showBack: true,
@@ -902,6 +1094,78 @@ class _ProofOfDeliveryScreenState extends State<ProofOfDeliveryScreen> {
               controller: _notes,
               maxLines: 3,
               decoration: const InputDecoration(labelText: 'Notes')),
+          if (_outboundSlots.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Delivered filled cylinders',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            ..._outboundSlots.map((slot) {
+              final key = slot['key']?.toString() ?? '';
+              final productName = slot['name']?.toString() ?? 'Product';
+              final qty = (slot['qty'] as num?)?.toInt() ?? 1;
+              final slotIndex = (slot['slotIndex'] as num?)?.toInt() ?? 0;
+              final label = qty > 1
+                  ? 'Delivered — $productName #${slotIndex + 1}'
+                  : 'Delivered — $productName';
+              final controller = _deliveredSerialControllers[key];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        decoration: InputDecoration(labelText: label),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _scanDeliveredCylinder(key),
+                      icon: const Icon(Icons.qr_code_scanner),
+                      tooltip: 'Scan QR',
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+          if (_refillSlots.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Returned cylinders (refill/exchange)',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            ..._refillSlots.map((slot) {
+              final key = slot['key']?.toString() ?? '';
+              final productName = slot['name']?.toString() ?? 'Product';
+              final qty = (slot['qty'] as num?)?.toInt() ?? 1;
+              final slotIndex = (slot['slotIndex'] as num?)?.toInt() ?? 0;
+              final label = qty > 1
+                  ? 'Return serial — $productName #${slotIndex + 1}'
+                  : 'Return serial — $productName';
+              final controller = _returnedSerialControllers[key];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        decoration: InputDecoration(labelText: label),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => _scanReturnedCylinder(key),
+                      icon: const Icon(Icons.qr_code_scanner),
+                      tooltip: 'Scan QR',
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _pickImage,

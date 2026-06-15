@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
 import 'dart:async';
@@ -15,6 +16,8 @@ import '../../core/widgets/data_list_screen.dart';
 import '../../core/widgets/status_badge.dart';
 import '../../core/widgets/list_tile_card.dart';
 import '../../core/widgets/mobile_shell.dart';
+import '../../core/widgets/pick_cylinders_sheet.dart';
+import '../../core/qr/cylinder_qr.dart';
 import '../../core/utils/file_share.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/notification_provider.dart';
@@ -631,61 +634,140 @@ class QrScannerScreen extends StatefulWidget {
 
 class _QrScannerScreenState extends State<QrScannerScreen> {
   final _serial = TextEditingController();
+  final _scannerController = MobileScannerController(
+    detectionSpeed: DetectionSpeed.noDuplicates,
+    facing: CameraFacing.back,
+  );
   Map<String, dynamic>? _result;
+  String? _lookupMessage;
+  bool _scanning = true;
+  bool _loading = false;
 
   @override
   void dispose() {
     _serial.dispose();
+    _scannerController.dispose();
     super.dispose();
   }
 
-  Future<void> _lookup() async {
+  Future<void> _lookup(String raw) async {
+    final code = normalizeScanInput(raw);
+    if (code.isEmpty) return;
+    setState(() {
+      _loading = true;
+      _lookupMessage = null;
+    });
     try {
-      final c = await sl<InventoryService>().getCylinderBySerial(_serial.text.trim());
-      setState(() => _result = c);
+      final response = await sl<InventoryService>().lookupCylinder(code);
+      final cylinder = response['cylinder'] as Map<String, dynamic>?;
+      setState(() {
+        _result = cylinder;
+        _lookupMessage = response['message']?.toString();
+        _serial.text = cylinder?['serialNumber']?.toString() ?? code;
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(e.toString())));
       }
+      setState(() => _result = null);
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (!_scanning || _loading) return;
+    final barcodes = capture.barcodes;
+    if (barcodes.isEmpty) return;
+    final raw = barcodes.first.rawValue;
+    if (raw == null || raw.trim().isEmpty) return;
+    setState(() => _scanning = false);
+    _lookup(raw);
   }
 
   @override
   Widget build(BuildContext context) {
     return MobileShell(
       title: 'QR / Serial Scanner',
-      child: Padding(
+      child: ListView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            TextField(
-              controller: _serial,
-              decoration: const InputDecoration(
-                labelText: 'Cylinder serial number',
-                prefixIcon: Icon(Icons.qr_code),
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(
+              height: 260,
+              child: MobileScanner(
+                controller: _scannerController,
+                onDetect: _onDetect,
               ),
             ),
-            const SizedBox(height: 16),
-            FilledButton(onPressed: _lookup, child: const Text('Lookup')),
-            if (_result != null) ...[
-              const SizedBox(height: 24),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Serial: ${_result!['serialNumber']}'),
-                      Text('Status: ${_result!['status']}'),
-                      Text('Product: ${_result!['productName']}'),
-                    ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _scanning ? 'Point camera at cylinder QR label' : 'Scan paused — tap Resume to scan again',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _serial,
+                  decoration: const InputDecoration(
+                    labelText: 'Serial or QR payload',
+                    prefixIcon: Icon(Icons.qr_code),
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _loading ? null : () => _lookup(_serial.text),
+                child: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Lookup'),
+              ),
             ],
+          ),
+          if (!_scanning)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: OutlinedButton(
+                onPressed: () => setState(() => _scanning = true),
+                child: const Text('Resume camera scan'),
+              ),
+            ),
+          if (_result != null) ...[
+            const SizedBox(height: 24),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_lookupMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _lookupMessage!,
+                          style: TextStyle(color: Colors.green.shade700),
+                        ),
+                      ),
+                    Text('Serial: ${_result!['serialNumber']}'),
+                    Text('Status: ${_result!['status']}'),
+                    Text('Product: ${_result!['productName']}'),
+                    if (_result!['productCylinderSize'] != null)
+                      Text('Size: ${_result!['productCylinderSize']}'),
+                  ],
+                ),
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -961,6 +1043,23 @@ class _DeliveryTrackScreenState extends State<DeliveryTrackScreen> {
                     ),
                     child: const Text('Reject'),
                   ),
+                ],
+                if (status == 'ASSIGNED' || status == 'PENDING') ...[
+                  FilledButton.icon(
+                    onPressed: () async {
+                      final orderId = _delivery?['orderId']?.toString();
+                      if (orderId == null) return;
+                      final ok = await showPickCylindersSheet(
+                        context,
+                        deliveryId: widget.deliveryId,
+                        orderId: orderId,
+                      );
+                      if (ok) _reload();
+                    },
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text('Pick Cylinders'),
+                  ),
+                  const SizedBox(height: 8),
                 ],
                 if (isDriver) ...[
                   if (status == 'PICKED_UP')
